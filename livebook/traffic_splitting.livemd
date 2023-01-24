@@ -50,8 +50,6 @@ The following cell installs the Elixir libraries we'll use to track and visualiz
 
 ```elixir
 Mix.install([
-  {:smart_cell_command,
-   git: "https://github.com/4141done/smart_cell_command.git", branch: "loosen-kino-dep"},
   {:jason, "~> 1.4"},
   {:vega_lite, "~> 0.1"},
   {:kino_vega_lite, "~> 0.1"},
