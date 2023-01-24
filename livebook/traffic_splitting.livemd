@@ -1,0 +1,218 @@
+# Traffic Splitting Demo
+
+## Scenario
+
+This notebook will help us explore the NGINX [ngx_http_split_clients_module](https://nginx.org/en/docs/http/ngx_http_split_clients_module.html) to understand how its applications and configuration options.
+
+Imagine a situation where we have a very old application that sits outside our main architecture which we are going to try to replace with a totally new application that has been rewritten to our current standards but has the same interface:
+
+<!-- livebook:{"break_markdown":true} -->
+
+<!-- Learn more at https://mermaid-js.github.io/mermaid -->
+
+```mermaid
+graph TD;
+  subgraph legacy infrastructure
+    FRONTEND
+    backend01
+    backend02
+  end
+  subgraph new infrastructure
+    backend03-canary
+    DOWNSTREAM_SERVICE-->FRONTEND
+  end
+
+  FRONTEND-- * -->backend01;
+  FRONTEND-- * -->backend02;
+  FRONTEND-- 20% -->backend03-canary;
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+We'd like to start routing a small amount of traffic to this new service as we monitor it carefully for scaling issues and bugs.
+
+The easiest method is to leverage the existing NGINX reverse proxy (`FRONTEND` in the diagram above) that sits in front of the legacy service.
+
+### Next Steps
+
+1. Run the cells one by one in the "Setup" section. These just set up behind the scenes code for tracking request distribution
+2. Use the cells in the "Visualizing Traffic Flow" section to run requests and see how they are distributed.
+
+## What is All this Code?
+
+The code that enables many of the actions in this exampe is written in [Elixir](https://elixir-lang.org/) which is also how this notebook is built.  **You can follow this whole example without knowing any Elixir.** All of the primary content will be NGINX configurations and diagrams.
+
+However, if you are interested in learning, See the official [Getting Started Guide](https://elixir-lang.org/getting-started/introduction.html) or [Elixir School](https://elixirschool.com). This tool is called [Livebook](https://livebook.dev/)
+
+## Install Dependencies
+
+The following cell installs the Elixir libraries we'll use to track and visualize traffic flow
+
+```elixir
+Mix.install([
+  {:smart_cell_command,
+   git: "https://github.com/4141done/smart_cell_command.git", branch: "loosen-kino-dep"},
+  {:jason, "~> 1.4"},
+  {:vega_lite, "~> 0.1"},
+  {:kino_vega_lite, "~> 0.1"},
+  {:dns, "~> 2.4"},
+  {:mint, "~> 1.4"},
+  {:smart_cell_file_editor, path: "/data/smart_cell_file_editor"},
+  {:nginx_livebook_utils, path: "/data/nginx_livebook_utils"}
+])
+```
+
+In the following cell, we perform some basic setup to count request routing based on logs from the `FRONTEND` server.
+
+**You don't need to understand any of this code.**
+
+```elixir
+alias NginxLivebookUtils.{TrafficCounter, UdpLogParser}
+
+# Determine which IP addresses correspond to the named
+# backends in order to make the diagrams easier to read
+run = fn ->
+  ip_to_name_mapping =
+    ["backend01", "backend02", "backend03"]
+    |> Enum.reduce(%{}, fn be, acc ->
+      case DNS.resolve(be) do
+        {:ok, [ip]} ->
+          upstream_ip =
+            Tuple.to_list(ip)
+            |> Enum.join(".")
+
+          Map.put(acc, "#{upstream_ip}:80", be)
+
+        _err ->
+          acc
+      end
+    end)
+
+  # Give the stats counter the hostname to ip address mappings
+  TrafficCounter.set_id_mappings(ip_to_name_mapping)
+
+  # Parse out log entries we care about and increment the traffic counter
+  UdpLogParser.set_packet_handler(fn log_message ->
+    # This extracts stringified json from the nginx logs
+    case Regex.named_captures(~r/(?<json>\{.+\})/, log_message) do
+      %{"json" => json} ->
+        {:ok, %{"upstream_addr" => upstream_addr}} = Jason.decode(json)
+        TrafficCounter.increment(upstream_addr)
+
+      _ ->
+        :ok
+    end
+  end)
+end
+
+run.()
+```
+
+## Visualize Traffic Split
+
+First, take a look at the `nginx.conf` file for the `FRONTEND` server.  Right above the `server` directive near the bottom, you'll see some code that looks like this:
+
+```nginx
+    split_clients "${request_id}" $backend_key {
+        20.0%   "backend_preprod";
+        *       "backend_prod";
+    }
+```
+
+This is the [`split_clients`](http://nginx.org/en/docs/http/ngx_http_split_clients_module.html#split_clients) directive that we'll use to control traffic flow between the canary (`backend03`) and the existing servers.
+
+There are two elements to take note of here:
+
+1. The first argument (`"${request_id}"` above) is the "hash key" input. This determines how your request will be assigned based on the body of the directive.  More similar keys (for example, if you are using time as a hash key input timestamps that are close together will tend to go to the same host).
+2. The second argument (`$backend_key` above) is the resulting assignment (for example, "backend_prod" or "backend_preprod").
+
+You can use the second argument, which is an NGINX variable, to route your request like this:
+
+```nginx
+  location / {
+      proxy_pass    http://$backend_key;
+  }
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+#### The Configuration File
+
+You can review the configuration file below.  No need to make any changes to it yet.  When you do make changes, make sure that you click the "Save" button after you are done, and run the cell after that to apply the config.
+
+<!-- livebook:{"attrs":{"filepath":"/etc/nginx/nginx.conf","file_content":"\nuser  nginx;\nworker_processes  auto;\n\nerror_log  /var/log/nginx/error.log notice;\npid        /var/run/nginx.pid;\n\n\nevents {\n    worker_connections  1024;\n}\n\n\nhttp {\n    include       /etc/nginx/mime.types;\n    default_type  application/octet-stream;\n\n    log_format main3 escape=json '{'\n    '\"remote_addr\":\"$remote_addr\",'\n    '\"time_iso8601\":\"$time_iso8601\",'\n    '\"request_uri\":\"$request_uri\",'\n    '\"request_length\":\"$request_length\",'\n    '\"request_method\":\"$request_method\",'\n    '\"request_time\":\"$request_time\",'\n    '\"server_port\":\"$server_port\",'\n    '\"server_protocol\":\"$server_protocol\",'\n    '\"ssl_protocol\":\"$ssl_protocol\",'\n    '\"status\":\"$status\",'\n    '\"bytes_sent\":\"$bytes_sent\",'\n    '\"http_referer\":\"$http_referer\",'\n    '\"http_user_agent\":\"$http_user_agent\",'\n    '\"upstream_response_time\":\"$upstream_response_time\",'\n    '\"upstream_addr\":\"$upstream_addr\",'\n    '\"upstream_connect_time\":\"$upstream_connect_time\",'\n    '\"upstream_cache_status\":\"$upstream_cache_status\",'\n    '\"tcpinfo_rtt\":\"$tcpinfo_rtt\",'\n    '\"tcpinfo_rttvar\":\"$tcpinfo_rttvar\"'\n    '}';\n\n\n\n    access_log  /var/log/nginx/access.log  main3;\n\n    sendfile        on;\n    #tcp_nopush     on;\n\n    keepalive_timeout  65;\n\n\n    upstream backend_prod {\n        zone backend_prod 64k;\n        server backend01:80;\n        server backend02:80;\n    }\n\n    upstream backend_preprod {\n        zone backend_preprod 64k;\n        server backend03:80;\n    }\n\n    split_clients \"${request_id}\" $backend_key {\n        20.0%   \"backend_preprod\";\n        *       \"backend_prod\";\n    }\n\n    server {\n        listen 80 default_server;\n        server_name $hostname;\n\n        location / {\n            proxy_pass    http://$backend_key;\n        }\n    }\n\n}\n"},"chunks":null,"kind":"Elixir.SmartCellFileEditor","livebook_object":"smart_cell"} -->
+
+```elixir
+"\nuser  nginx;\nworker_processes  auto;\n\nerror_log  /var/log/nginx/error.log notice;\npid        /var/run/nginx.pid;\n\n\nevents {\n    worker_connections  1024;\n}\n\n\nhttp {\n    include       /etc/nginx/mime.types;\n    default_type  application/octet-stream;\n\n    log_format main3 escape=json '{'\n    '\"remote_addr\":\"$remote_addr\",'\n    '\"time_iso8601\":\"$time_iso8601\",'\n    '\"request_uri\":\"$request_uri\",'\n    '\"request_length\":\"$request_length\",'\n    '\"request_method\":\"$request_method\",'\n    '\"request_time\":\"$request_time\",'\n    '\"server_port\":\"$server_port\",'\n    '\"server_protocol\":\"$server_protocol\",'\n    '\"ssl_protocol\":\"$ssl_protocol\",'\n    '\"status\":\"$status\",'\n    '\"bytes_sent\":\"$bytes_sent\",'\n    '\"http_referer\":\"$http_referer\",'\n    '\"http_user_agent\":\"$http_user_agent\",'\n    '\"upstream_response_time\":\"$upstream_response_time\",'\n    '\"upstream_addr\":\"$upstream_addr\",'\n    '\"upstream_connect_time\":\"$upstream_connect_time\",'\n    '\"upstream_cache_status\":\"$upstream_cache_status\",'\n    '\"tcpinfo_rtt\":\"$tcpinfo_rtt\",'\n    '\"tcpinfo_rttvar\":\"$tcpinfo_rttvar\"'\n    '}';\n\n\n\n    access_log  /var/log/nginx/access.log  main3;\n\n    sendfile        on;\n    #tcp_nopush     on;\n\n    keepalive_timeout  65;\n\n\n    upstream backend_prod {\n        zone backend_prod 64k;\n        server backend01:80;\n        server backend02:80;\n    }\n\n    upstream backend_preprod {\n        zone backend_preprod 64k;\n        server backend03:80;\n    }\n\n    split_clients \"${request_id}\" $backend_key {\n        20.0%   \"backend_preprod\";\n        *       \"backend_prod\";\n    }\n\n    server {\n        listen 80 default_server;\n        server_name $hostname;\n\n        location / {\n            proxy_pass    http://$backend_key;\n        }\n    }\n\n}\n"
+|> IO.puts()
+```
+
+#### Apply Config
+
+The following cell restarts the the `FRONTEND` container and causes it to reload it's configuration.  You **must** run this cell after you change the `nginx.conf` in the above cell, or your changes will not take effect.
+
+```elixir
+NginxLivebookUtils.TrafficGenerator.run(
+  {:local, "/var/run/docker.sock"},
+  "/v1.24/containers/frontend/restart",
+  hostname: "localhost",
+  method: "POST",
+  port: 0
+)
+```
+
+#### Clear Request Counts
+
+The following cell clears the notebook's count of how many requests went to each server. Use it after you change the `nginx.conf` and reload the configuration.
+
+```elixir
+NginxLivebookUtils.TrafficCounter.clear()
+```
+
+## Start Traffic Flow Visualization
+
+````elixir
+run = fn ->
+  Kino.animate(500, fn _ ->
+    text =
+      NginxLivebookUtils.TrafficCounter.raw_stats()
+      |> Enum.reduce("", fn {backend_name, call_count}, acc ->
+        acc <> "FRONTEND-- #{call_count} -->#{backend_name};\n"
+      end)
+
+    Kino.Markdown.new(~s"""
+    ```mermaid
+    graph TD;
+      subgraph legacy infrastructure
+        FRONTEND
+        backend01
+        backend02
+      end
+      subgraph new infrastructure
+        backend03
+        DOWNSTREAM_SERVICE-->FRONTEND
+      end
+
+      #{text}
+    ```
+    """)
+  end)
+end
+
+run.()
+````
+
+#### Send Requests
+
+The following cell will send a request to our NGINX frontend. You can adjust how many calls you want to simulate by changing the value of `call_count` as well as add any delay by changing the value of `call_delay_ms` (which can also be `0` if you want).
+
+As your calls run, you can observe the traffic by scrolling back up to the diagram above (make sure you evaluated that cell).
+
+```elixir
+NginxLivebookUtils.TrafficGenerator.run(
+  "frontend",
+  "/",
+  call_count: 1000,
+  call_delay_ms: 500
+)
+```

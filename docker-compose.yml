@@ -1,0 +1,108 @@
+version: '3.8'
+services:
+
+  # 
+  # Frontend NGINX Deployment to serve as a load balancer
+  # 
+  frontend:
+    image: nginx
+    container_name: frontend
+    hostname: frontend
+    restart: always
+    environment:
+      - TZ="America/Denver"
+    volumes:
+      - ./frontend/config/nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - 80:80
+    networks:
+      - backend
+      - frontend
+  
+  #
+  # The three backends are setup individually in order to allow
+  # the configurations to be changed as needed for different 
+  # demos.
+  #
+  backend01:
+    image: nginx
+    container_name: backend01
+    hostname: backend01
+    environment:
+      - TZ="America/Denver"
+      - LOGSPOUT=ignore
+    volumes:
+      - ./backend/config/nginx.conf:/etc/nginx/nginx.conf
+      - ./backend/www:/usr/share/nginx/html
+      - ./backend/config/conf.d:/etc/nginx/conf.d
+    networks:
+      - backend
+
+  backend02:
+    image: nginx
+    container_name: backend02
+    hostname: backend02
+    environment:
+      - TZ="America/Denver"
+      - LOGSPOUT=ignore
+    volumes:
+      - ./backend/config/nginx.conf:/etc/nginx/nginx.conf
+      - ./backend/www:/usr/share/nginx/html
+      - ./backend/config/conf.d:/etc/nginx/conf.d
+    networks:
+      - backend
+
+  backend03:
+    image: nginx
+    container_name: backend03
+    hostname: backend03
+    environment:
+      - TZ="America/Denver"
+      - LOGSPOUT=ignore
+    volumes:
+      - ./backend/config/nginx.conf:/etc/nginx/nginx.conf
+      - ./backend/www:/usr/share/nginx/html
+      - ./backend/config/conf.d:/etc/nginx/conf.d
+    networks:
+      - backend
+  
+  logspout:
+    image: gliderlabs/logspout
+    command:
+        - "syslog+udp://livebook:514"
+    ports:
+        - "8000:80"
+    volumes:
+        # This is generally not a good idea security-wise
+        # but allows smooth operation of the demo
+        - "/var/run/docker.sock:/var/run/docker.sock"
+    networks:
+      - backend
+      - frontend
+  
+  livebook:
+    image: livebook/livebook
+    environment:
+      - LIVEBOOK_TOKEN_ENABLED=false
+      - LOGSPOUT=ignore
+    ports:
+      - 8080:8080
+      - 8081:8081
+    volumes:
+      - ./livebook:/data
+      - ./frontend/config/nginx.conf:/etc/nginx/nginx.conf
+      # This is generally not a good idea security-wise
+      # but allows smooth operation of the demo
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    networks:
+      - backend
+      - frontend
+
+#
+# The loadbalancer will be connected to both the frontend and
+# backend networks, while the backends are only connected to 
+# the backend network.
+#
+networks:
+  frontend:
+  backend:

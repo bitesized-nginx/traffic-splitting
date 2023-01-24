@@ -1,48 +1,35 @@
-# NGINX Template Repository
+# Traffic Splitting Example
+This repository provides a basic example of traffic splitting using the NGINX [ngx_http_split_clients_module](https://nginx.org/en/docs/http/ngx_http_split_clients_module.html).
 
-## How do I use this template?
-
-**DO NOT FORK** -- this template is meant to be used from the **[`Use this template`](https://github.com/nginxinc/template-repository/generate)** feature.
-
-1. Click on **[`Use this template`](https://github.com/nginxinc/template-repository/generate)**
-2. Give a name to your project
-3. Wait until the first run of CI finishes (Github Actions will process the template and commit to your new repo)
-4. Clone your new project and happy coding!
-
-**NOTE**: **WAIT** until the first CI run on GitHub Actions before cloning your new project.
-
-## What is included on this template?
-
-This template includes all the scaffolding you need to get started on a standards compliant NGINX repository:
-
-- Standard license for NGINX OSS projects
-- Standard `.gitignore` with minimal defaults
-- Issue and PR templates
-- Contributing guidelines
-- Support guidelines
-- Security guidelines for reporting major vulnerabilities
-- NGINX Code of Conduct
-- README placeholder
-- Changelog placeholder
-- Codeowners placeholder
-
----
-
-<!--  DELETE THE LINES ABOVE THIS AND WRITE YOUR PROJECT README BELOW -- PLACEHOLDER SECTIONS HAVE BEEN INCLUDED FOR YOUR CONVENIENCE -->
-
-# traffic_splitting
+It includes a sample scenario that you can explore and modify.  See the "Getting Started" section below.
 
 ## Requirements
-
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam elit turpis, varius et arcu elementum, viverra rhoncus sem. Aliquam nec sodales magna, et egestas enim. Mauris lobortis ultrices euismod. Pellentesque in arcu lacus. Mauris cursus laoreet nulla, ac vehicula est. Vestibulum eu mauris quis lorem consectetur aliquam ac nec quam. Vestibulum commodo pharetra mi, at bibendum neque faucibus ut. Mauris et tortor sed sem consectetur eleifend ut non magna. Praesent feugiat placerat nibh, varius viverra orci bibendum sed. Vestibulum dapibus ex ut pulvinar facilisis. Quisque sodales enim et augue tempor mattis. Suspendisse finibus congue felis, ac blandit ligula. Praesent condimentum ultrices odio quis semper. Nunc ultrices, nibh quis mattis pellentesque, elit nulla bibendum felis, quis dapibus erat turpis ac urna.
+This example requires that you have docker and docker-compose installed. See the [docker installation page](https://docs.docker.com/get-docker/) for more details.
 
 ## Getting Started
+This example uses the official [NGINX docker image](https://hub.docker.com/_/nginx) and [Livebook](https://livebook.dev/) to provide an interactive example of traffic splitting.
 
-Duis sit amet sapien vel velit ornare vulputate. Nulla rutrum euismod risus ac efficitur. Curabitur in sagittis elit, a semper leo. Suspendisse malesuada aliquam velit, eu suscipit lorem vehicula at. Proin turpis lacus, semper in placerat in, accumsan non ipsum. Cras euismod, elit eget pretium laoreet, tortor nulla finibus tortor, nec hendrerit elit turpis ut eros. Quisque congue nisi id mauris molestie, eu condimentum dolor rutrum. Nullam eleifend elit ac lobortis tristique. Pellentesque nec tellus non mauris aliquet commodo a eu elit. Ut at feugiat metus, at tristique mauris. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae;
+1. Clone this repository: `git clone https://github.com/bitesized-nginx/traffic-splitting.git`
+1. From the root directory of the project, run `docker-compose up`
+1. In browser, navigate to: `http://0.0.0.0:8080/`
+1. Click on `traffic_splitting.livemd`, then the blue "open" button
+   upper right.
 
 ## How to Use
 
-Maecenas at vehicula justo. Suspendisse posuere elementum elit vel posuere. Etiam quis pulvinar massa. Integer tempor semper risus, vitae maximus eros ullamcorper vitae. In egestas, ex vitae gravida sodales, ipsum dolor varius est, et cursus lorem dui a mi. Morbi faucibus ut nisi id faucibus. Sed quis ullamcorper ex. In et dolor id nunc interdum suscipit.
+Instructions are provided in the notebook and you can follow the instructions.  Each "cell" will have an "evaluate" button on the upper left corner when you hover your cursor over it.  Clicking that will perform the action in the shell.
+
+### Do I need to know Elixir to use this?
+Nope! Livebook is a powerful tool for writing composable interactive examples with tutorial content inline which is why it was chosen. However, we've set it up in such a way that you don't need to know any Elixir to use it.
+
+You may have to enter numerical values into Elixir code from time to time, but it should be self explanatory.  For example take the following code block:
+
+```elixir
+NginxLivebookUtils.TrafficGenerator.run("frontend", "/", call_count: 100, call_delay_ms: 500)
+```
+In order to send more or less traffic, you'll just need to modify the number to the right of `call_count`.  To insert a small delay between each call, change the number to the right of `call_delay_ms` to the number of milliseconds the generator should sleep between requests.
+
+However, if you are interested in learning Elixir, See the official [Getting Started Guide](https://elixir-lang.org/getting-started/introduction.html) or [Elixir School](https://elixirschool.com). This tool is called [Livebook](https://livebook.dev/).  If you do, you'll be able to easily modify the generated diagrams, and create more robust examples if you'd like to do other measurements.
 
 ## Contributing
 
